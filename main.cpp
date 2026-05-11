@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cmath>
@@ -17,6 +18,28 @@ class vec2 {
 	vec2() : x(0), y(0) {};
 	vec2(float x, float y) : x(x), y(y) {};
 	float x, y;
+
+	void flatten() {
+		x = std::round(x);
+		y = std::round(y);
+	}
+
+	bool operator<(const vec2 &other) const { return y < other.y; }
+	bool operator>(const vec2 &other) const { return y > other.y; }
+	vec2 operator+(const vec2 &other) const {
+		vec2 result(x + other.x, y + other.y);
+		return result;
+	}
+	vec2 operator-(const vec2 &other) const {
+		vec2 result(x - other.x, y - other.y);
+		return result;
+	}
+	bool operator==(const vec2 &other) const {
+		return x == other.x && y == other.y;
+	}
+	bool operator!=(const vec2 &other) const {
+		return x != other.x || y != other.y;
+	}
 };
 
 class vec3 {
@@ -33,25 +56,25 @@ class vec4 {
 	float x, y, z, w;
 };
 
-matrix4x4 rotateX(float angle) {
+matrix4x4 rotateX(const float angle) {
 	float c = std::cos(toRadians(angle));
 	float s = std::sin(toRadians(angle));
 	return {{{{1, 0, 0, 0}}, {{0, c, -s, 0}}, {{0, s, c, 0}}, {{0, 0, 0, 1}}}};
 }
 
-matrix4x4 rotateY(float angle) {
+matrix4x4 rotateY(const float angle) {
 	float c = std::cos(toRadians(angle));
 	float s = std::sin(toRadians(angle));
 	return {{{{c, 0, s, 0}}, {{0, 1, 0, 0}}, {{-s, 0, c, 0}}, {{0, 0, 0, 1}}}};
 }
 
-matrix4x4 rotateZ(float angle) {
+matrix4x4 rotateZ(const float angle) {
 	float c = std::cos(toRadians(angle));
 	float s = std::sin(toRadians(angle));
 	return {{{{c, -s, 0, 0}}, {{s, c, 0, 0}}, {{0, 0, 1, 0}}, {{0, 0, 0, 1}}}};
 }
 
-matrix4x4 multMat(matrix4x4 &a, matrix4x4 &b) {
+matrix4x4 multMat(const matrix4x4 &a, const matrix4x4 &b) {
 	matrix4x4 res{};
 	for (int i = 0; i < 4; i++)
 		for (int j = 0; j < 4; j++)
@@ -60,7 +83,7 @@ matrix4x4 multMat(matrix4x4 &a, matrix4x4 &b) {
 	return res;
 }
 
-vec4 multVec(vec4 &point, matrix4x4 &matrix) {
+vec4 multVec(const vec4 &point, const matrix4x4 &matrix) {
 	vec4 res(0, 0, 0, 0);
 	res.x = matrix[0][0] * point.x + matrix[1][0] * point.y +
 			matrix[2][0] * point.z + matrix[3][0] * point.w;
@@ -77,18 +100,18 @@ vec4 multVec(vec4 &point, matrix4x4 &matrix) {
 class Line {
   public:
 	Line() {};
-	Line(vec3 *a, vec3 *b) {
+	Line(vec3 a, vec3 b) {
 		start = a;
 		end = b;
-		length = std::sqrt(std::pow(a->x - b->x, 2) + std::pow(a->y - b->y, 2) +
-						   std::pow(a->z - b->z, 2));
+		length = std::sqrt(std::pow(a.x - b.x, 2) + std::pow(a.y - b.y, 2) +
+						   std::pow(a.z - b.z, 2));
 	}
-	vec3 getStart() { return *start; }
-	vec3 getEnd() { return *end; }
+	vec3 getStart() { return start; }
+	vec3 getEnd() { return end; }
 
   private:
-	vec3 *start;
-	vec3 *end;
+	vec3 start;
+	vec3 end;
 	float length;
 };
 
@@ -140,6 +163,90 @@ class Line2D {
 	float length;
 };
 
+class Tri {
+  public:
+	Tri() {};
+	Tri(vec2 a, vec2 b, vec2 c)
+		: p1(a), p2(b), p3(c), l12(a, b), l23(b, c), l31(c, a) {};
+
+	std::vector<vec2> getPoints() {
+		std::vector<vec2> points;
+		std::vector<vec2> result;
+		std::vector<vec2> temp = l12.getPoints();
+		points.insert(points.end(), temp.begin(), temp.end());
+		temp = l23.getPoints();
+		points.insert(points.end(), temp.begin(), temp.end());
+		temp = l31.getPoints();
+		points.insert(points.end(), temp.begin(), temp.end());
+
+		std::sort(points.begin(), points.end(), [](vec2 a, vec2 b) {
+			return a.y < b.y ? true : a.y == b.y ? a.x < b.x : false;
+		});
+
+		int level = -9999999;
+		std::vector<int> xs;
+		result = points;
+		for (const auto p : points) {
+			vec2 point = p;
+			point.flatten();
+			if (point.y > level) {
+				if (xs.size() >= 1) {
+					std::sort(xs.begin(), xs.end());
+					for (int i = xs[0]; i < xs.back(); i++) {
+						result.push_back(vec2(i, level));
+					}
+				}
+				level = point.y;
+				xs.clear();
+				xs.push_back(point.x);
+				continue;
+			}
+			xs.push_back(point.x);
+		}
+
+		return result;
+	};
+
+  private:
+	vec2 p1, p2, p3;
+	Line2D l12, l23, l31;
+};
+
+class Quad {
+  public:
+	Quad() {};
+	Quad(vec2 a, vec2 b, vec2 c, vec2 d) : p1(a), p2(b), p3(c), p4(d) {
+		t1 = Tri(a, b, c);
+		vec2 odd = maxd(a, b, c, d);
+		t2 = Tri(a == odd ? b : a, a == odd ? c : b, d);
+	};
+
+	vec2 maxd(vec2 a, vec2 b, vec2 c, vec2 d) {
+		float da =
+			std::sqrt(std::pow((a.x - d.x), 2) + std::pow((a.y - d.y), 2));
+		float db =
+			std::sqrt(std::pow((b.x - d.x), 2) + std::pow((b.y - d.y), 2));
+		float dc =
+			std::sqrt(std::pow((c.x - d.x), 2) + std::pow((c.y - d.y), 2));
+
+		return (da > db && da > dc
+					? a
+					: (db > da && db > dc ? b : (dc > da && dc > db ? c : a)));
+	}
+
+	std::vector<vec2> getPoints() {
+		std::vector<vec2> result = t1.getPoints();
+		std::vector<vec2> temp = t2.getPoints();
+		result.insert(result.end(), temp.begin(), temp.end());
+
+		return result;
+	}
+
+  private:
+	vec2 p1, p2, p3, p4;
+	Tri t1, t2;
+};
+
 class Cube {
   public:
 	Cube(float x, float y, float z, float w, float l, float h) {
@@ -147,20 +254,6 @@ class Cube {
 					 vec3(x, y + l, z),		vec3(x + w, y + l, z),
 					 vec3(x, y, z + h),		vec3(x + w, y, z + h),
 					 vec3(x, y + l, z + h), vec3(x + w, y + l, z + h)};
-		edges = {
-			Line(&verticies[0], &verticies[1]),
-			Line(&verticies[2], &verticies[3]),
-			Line(&verticies[4], &verticies[5]),
-			Line(&verticies[6], &verticies[7]),
-			Line(&verticies[0], &verticies[2]),
-			Line(&verticies[1], &verticies[3]),
-			Line(&verticies[4], &verticies[6]),
-			Line(&verticies[5], &verticies[7]),
-			Line(&verticies[0], &verticies[4]),
-			Line(&verticies[1], &verticies[5]),
-			Line(&verticies[2], &verticies[6]),
-			Line(&verticies[3], &verticies[7]),
-		};
 	};
 
 	void move(float x, float y, float z) {
@@ -200,11 +293,10 @@ class Cube {
 	}
 
 	std::array<vec3, 8> getVerticies() { return verticies; }
-	std::array<Line, 12> getEdges() { return edges; }
 
   private:
 	std::array<vec3, 8> verticies;
-	std::array<Line, 12> edges;
+	std::array<Quad, 6> quads;
 };
 
 class Camera3D {
@@ -267,6 +359,7 @@ class Camera3D {
 
 		return res;
 	}
+
 	float fov, aspect, near, far;
 	matrix4x4 projection;
 };
@@ -276,7 +369,7 @@ class Screen {
 	Screen(int width, int height, float fov, float near, float far,
 		   float worldScale)
 		: width(width), height(height),
-		  camera(fov, (width * 1.0f) / (height * 0.5f), near, far) {
+		  camera(fov, (width * 1.0f) / (height * 2.f), near, far) {
 		float s = 1.0f / worldScale;
 		view = {
 			{{{s, 0, 0, 0}}, {{0, s, 0, 0}}, {{0, 0, s, 0}}, {{0, 0, 0, 1}}}};
@@ -305,7 +398,7 @@ class Screen {
 
 	void addToBuffer(float x, float y, float val) {
 		if (x > 0 && y > 0 && x < buffer[0].size() - 1 &&
-			y < buffer[1].size() - 1) {
+			y < buffer[0].size() - 1) {
 			buffer[std::round(y)][std::round(x)] = val;
 		}
 	}
@@ -328,37 +421,49 @@ class Screen {
 		addToBuffer(dp);
 	}
 
-	void addLine(Line2D line) {
-		for (auto point : line.getPoints()) {
+	void addPoints(const std::vector<vec2> &points) {
+		for (const auto &point : points) {
 			addToBuffer(point);
 		}
 	}
 
-	void addLine(Line line3D) {
-		Line2D line = camera.project2d(line3D, view, width, height);
-		addLine(line);
+	void add(Cube cube) {
+		std::array<vec2, 8> points;
+		int i = 0;
+		for (const auto &point : cube.getVerticies()) {
+			vec4 v(point);
+			points[i++] = camera.project2d(v, view, width, height);
+		}
+		std::array<Quad, 6> quads = {
+			Quad(points[0], points[1], points[2], points[3]),
+			Quad(points[4], points[5], points[6], points[7]),
+			Quad(points[0], points[1], points[4], points[5]),
+			Quad(points[2], points[3], points[6], points[7]),
+			Quad(points[0], points[2], points[4], points[6]),
+			Quad(points[1], points[3], points[5], points[7])};
+		for (const auto &quad : quads)
+			add(quad);
 	}
+
+	void add(Quad quad) { addPoints(quad.getPoints()); }
 };
 
 int main() {
 	const std::chrono::nanoseconds frameDuration(1000000000 / 60);
 	auto nextFrame = std::chrono::steady_clock::now();
 	int frameCount = 0;
-	Screen screen(127, 72, 81, 0.1f, 1000.f, 20);
-	Cube cube(0, 0, 9, 5, 5, 5);
+	Screen screen(78, 44, 81, 0.1f, 1000.f, 20);
+	Cube cube(0, 1.5, 9, 5, 5, 5);
 	while (true) {
 		nextFrame += frameDuration;
 
 		screen.clearBuffer();
 
-		for (const auto line : cube.getEdges()) {
-			screen.addLine(line);
-		}
+		screen.add(cube);
 
 		screen.draw();
 
-		cube.rotate(0, 0.5, 0);
-		cube.move(0, 0.01, 0);
+		cube.rotate(0, 0.1f, 0);
 
 		std::this_thread::sleep_until(nextFrame);
 		frameCount++;
